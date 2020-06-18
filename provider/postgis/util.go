@@ -43,7 +43,7 @@ func genSQL(l *Layer, pool *pgx.ConnPool, tblname string, flds []string, buffer 
 		//	'tablename' param. because of this case normal SQL token replacement needs to be
 		//	applied to tablename SQL generation
 		tile := provider.NewTile(0, 0, 0, 64, proj.WebMercator)
-		sql, err = replaceTokens(sql, l, tile, buffer)
+		sql, err = replaceTokens(nil, sql, l, tile, buffer)
 		if err != nil {
 			return "", err
 		}
@@ -105,6 +105,7 @@ const (
 	idFieldToken          = "!ID_FIELD!"
 	geomFieldToken        = "!GEOM_FIELD!"
 	geomTypeToken         = "!GEOM_TYPE!"
+	companyIDToken        = "!COMPANY_ID!"
 )
 
 // replaceTokens replaces tokens in the provided SQL string
@@ -120,7 +121,8 @@ const (
 // !ID_FIELD! - the id field name
 // !GEOM_FIELD! - the geom field name
 // !GEOM_TYPE! - the geom type if defined otherwise ""
-func replaceTokens(sql string, lyr *Layer, tile provider.Tile, withBuffer bool) (string, error) {
+// !COMPANY_ID! - the company id to restrict the scope to
+func replaceTokens(ctx context.Context, sql string, lyr *Layer, tile provider.Tile, withBuffer bool) (string, error) {
 	var extent *geom.Extent
 	if lyr == nil {
 		return "", fmt.Errorf("layer is nil")
@@ -177,7 +179,14 @@ func replaceTokens(sql string, lyr *Layer, tile provider.Tile, withBuffer bool) 
 
 	uppercaseTokenSQL := uppercaseTokens(sql)
 
-	return tokenReplacer.Replace(uppercaseTokenSQL), nil
+	replaced := tokenReplacer.Replace(uppercaseTokenSQL)
+	if ctx != nil {
+		replaced = strings.ReplaceAll(replaced, companyIDToken, fmt.Sprintf(`company_id='\x%s'`, ctx.Value("companyId")))
+	} else {
+		replaced = strings.ReplaceAll(replaced, fmt.Sprintf("%s AND ", companyIDToken), "")
+	}
+
+	return replaced, nil
 }
 
 var tokenRe = regexp.MustCompile("![a-zA-Z0-9_-]+!")
